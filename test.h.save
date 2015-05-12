@@ -1,0 +1,496 @@
+#include <tesseract/baseapi.h>
+#include <leptonica/allheaders.h>
+#include <ctime>
+#include <fstream>
+#include <iostream>
+#include <vector>
+#include <raspicam/raspicam_cv.h>
+#include <raspicam/raspicam.h>
+#include <raspicam/raspicamtypes.h>
+#include "opencv2/imgproc/imgproc.hpp"
+#include <fstream>
+#include <stdlib.h>
+#include "sonar.h"
+using namespace std;
+using namespace cv;
+using namespace raspicam;
+
+void changeDirection(string &direction, string turn, int &pos)
+{
+  int west=-1;
+  int north=-7;
+  int south=7;
+  int east=1;
+  if(turn=="forward")
+  {
+    if(direction=="west")
+    {
+      pos+=west;
+    }
+    else if(direction=="east")
+    {
+      pos+=east;
+    }
+    else if(direction=="north")
+    {
+      pos+=north;
+    }
+    else if(direction=="south")
+    {
+      pos+=south;
+    }
+  }
+  else if(direction=="north"&&turn=="left")
+  {
+    direction="west";
+    pos+=west;
+  }
+  else if(direction=="north"&&turn=="right")
+  {
+    direction="east";
+    pos+=east;
+  }
+  else if(direction=="north"&&turn=="around")
+  {
+    direction="south";
+    pos+=south;
+  }
+  else if(direction=="east"&&turn=="left")
+  {
+    direction="north";
+    pos+=north;
+  }
+  else if(direction=="east"&&turn=="right")
+  {
+    direction="south";
+    pos+=south;
+  }
+  else if(direction=="east"&&turn=="around")
+  {
+    direction="west";
+    pos+=west;
+  }
+  else if(direction=="south"&&turn=="left")
+  {
+    direction="east";
+    pos+=east;
+  }
+  else if(direction=="south"&&turn=="right")
+  {
+    direction="west";
+    pos+=west;
+  }
+  else if(direction=="south"&&turn=="around")
+  {
+    direction="north";
+    pos+=north;
+  }
+  else if(direction=="west"&&turn=="left")
+  {
+    direction="south";
+    pos+=south;
+  }
+  else if(direction=="west"&&turn=="right")
+  {
+    direction="north";
+    pos+=north;
+  }
+  else if(direction=="west"&&turn=="around")
+  {
+    direction="east";
+    pos+=east;
+  }
+
+  return;
+}
+int readNum(string file)
+{
+  int num;
+  int i;
+  ifstream f;
+  f.open(file.c_str());
+  f>>num;
+  f.close();
+  ofstream of;
+  i=num;
+  num++;
+  if(num==3)
+  {
+    num=1;
+  }
+  of.open(file.c_str()); 
+  of<<num;
+  of.close();
+  return i;
+}
+void GetCameraImage(Mat & mat)
+{
+/*  RaspiCam cam;
+  //cam.setAWB(RASPICAM_AWB_SUNLIGHT); 
+//  cam.setImageEffect(RASPICAM_IMAGE_EFFECT_NEGATIVE);
+  cam.setFormat(RASPICAM_FORMAT_BGR);
+  cam.setAWB(RASPICAM_AWB_OFF);
+  cam.setImageEffect(RASPICAM_IMAGE_EFFECT_COLORBALANCE);
+  cam.setExposure(RASPICAM_EXPOSURE_SPORTS);
+  cam.setContrast(800);
+  cam.setSaturation(100);
+  if(!cam.open())
+  {
+    cout<<"error opening camera"<<endl;
+  }
+  else
+  {
+    sleep(1);
+    cam.grab();
+    unsigned char *data=new unsigned char[cam.getImageTypeSize(RASPICAM_FORMAT_BGR)];
+    cam.retrieve(data, RASPICAM_FORMAT_BGR);
+    //data = cam.getImageBufferData();
+    mat=Mat(cam.getHeight(),cam.getWidth(),CV_8UC3,data);
+    cam.release();
+  }*/
+  RaspiCam_Cv camera;
+  camera.set( CV_CAP_PROP_FORMAT, CV_8UC3 );
+
+  cout << "Opening Camera..." << endl;
+
+  if (!camera.open())
+  {
+    cerr<<"Error opening camera"<<endl;
+  }
+  else
+  {
+
+    //wait a while until camera stabilizes
+    cout << "Sleeping for 1 sec" << endl;
+
+    sleep(1);
+
+    cout << "Capture" << endl;
+
+    //capture
+    camera.grab();
+    cout << "Camera Grab Complete" <<endl;
+
+    camera.retrieve(mat);
+    cout << "Matrix Retrieved" <<endl;
+
+    transpose(mat,mat);
+    cout << "Matrix transposed" <<endl;
+
+    flip(mat,mat,1);
+    cout << "Matrix transposed" <<endl;
+
+  }
+
+  return;
+}
+
+// 0 for red channel, 1 for green channel, 2 for blue channel
+Mat ColorFilter(Mat mat, const int& color)
+{
+  Mat channel[3];
+  split(mat, channel);
+  //Filters out blue and green
+  if(color==0)
+  {
+    //set blue channel to zero
+    channel[0]=Mat::zeros(mat.rows, mat.cols, CV_8UC1);
+    //set green filter to zero
+    channel[1]=Mat::zeros(mat.rows, mat.cols, CV_8UC1);
+    merge(channel, 3, mat);
+  }
+  //Filters out red and blue
+  else if(color==1)
+  { 
+    //set blue channel to zero
+    channel[0]=Mat::zeros(mat.rows, mat.cols, CV_8UC1);
+    //set red filter to zero
+    channel[2]=Mat::zeros(mat.rows, mat.cols, CV_8UC1);
+    merge(channel, 3, mat);
+
+  }
+  //Filters out red and green
+  else if(color==2)
+  {
+    //set green channel to zero
+    channel[1]=Mat::zeros(mat.rows, mat.cols, CV_8UC1);
+    //set red filter to zero
+    channel[2]=Mat::zeros(mat.rows, mat.cols, CV_8UC1);
+    merge(channel, 3, mat);
+  }
+  else
+  {
+    cout<<"color must be 0, 1, or 2"<<endl;
+  }
+
+  return mat;
+}
+
+Mat CannyThreshold(Mat src, const int lowThresh, const int highThresh)
+{
+  Mat src_gray;
+  Mat detected_edges, blurred;
+  int ksize =3;
+  cvtColor( src, src_gray, CV_BGR2GRAY );
+  blur(src_gray, blurred, Size(ksize,ksize));
+  Canny(blurred, detected_edges, lowThresh, highThresh,ksize);
+  vector<vector<Point> > contours ;
+  vector<Vec4i> hierarchy;
+  findContours(detected_edges, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE, Point(0,0) );
+  vector<Point> approx;
+  vector<vector<Point> > contours_poly( contours.size() );
+  vector<Rect> boundRect( contours.size() );
+  Mat dst = Mat::zeros( detected_edges.size(), CV_8UC3 );
+ // for(int i=0; i< contours.size(); i++)
+  //{
+ //   drawContours( dst, contours, i, Scalar(57, 83, 158), 2, 8, hierarchy, 0, Point() );
+  //}
+  for( int i = 0; i < contours.size(); i++ )
+     { 
+       approxPolyDP( Mat(contours[i]), contours_poly[i], 25, true );
+       boundRect[i] = boundingRect( Mat(contours_poly[i]) );
+     }
+  for( int i = 0; i< contours.size(); i++ )
+     {
+      // Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+       drawContours( dst, contours_poly, i, Scalar(58, 28, 167), 1, 8, vector<Vec4i>(), 0, Point() );
+       rectangle( dst, boundRect[i].tl(), boundRect[i].br(), Scalar(178, 83, 28), 2, 8, 0 );
+      // circle( drawing, center[i], (int)radius[i], color, 2, 8, 0 );
+     }
+  return dst;
+}
+
+void RGBFilter(Mat mat)
+{
+  string window = "Image";
+  namedWindow(window, 1);
+  imshow(window, mat);
+  int lb=0;
+  int hb=255;
+  int lg=0;
+  int hg=255;
+  int lr=0;
+  int hr=255;
+  int iKey=0;
+  createTrackbar("lb",window,&lb,255);
+  createTrackbar("lg",window,&lg,255);
+  createTrackbar("lr",window,&lr,255);
+  createTrackbar("hb",window,&hb,255);
+  createTrackbar("hg",window,&hg,255);
+  createTrackbar("hr",window,&hr,255);
+
+  while(iKey!=27)
+  {
+    Mat filterMat;
+    iKey=waitKey(50);
+    inRange(mat, Scalar(lb,lg,lr), Scalar(hb,hg,hr), filterMat);
+    imshow(window, filterMat);
+  }
+
+  return;
+}
+
+
+void FindAndCrop(Mat & filterMat, const bool debug)
+{
+  int ksize = 3;
+  int lowThresh = 20;
+  int highThresh = 50;
+  const int MIN_AREA=8000;
+  const int MAX_AREA=100000;
+  const float MIN_RATIO =0.1667;
+  const float MAX_RATIO=6;
+  Mat detected_edges;
+  blur(filterMat, filterMat, Size(ksize,ksize));
+  Canny(filterMat, detected_edges, lowThresh, highThresh,ksize);
+  vector<vector<Point> > contours ;
+  vector<Vec4i> hierarchy;
+  cout<<"finding contours"<<endl;
+  findContours(detected_edges, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE, Point(0,0) );
+  hierarchy.clear();
+  vector<Point> approx;
+  vector<vector<Point> > contours_poly( contours.size() );
+  vector<Rect> boundRect;
+  Mat dst = Mat::zeros( detected_edges.size(), CV_8UC3 );
+  detected_edges.release();
+  cout<<"approximating polygons and bounding rectangles"<<endl;
+  for( int i = 0; i < contours.size(); i++ )
+  {
+    approxPolyDP( Mat(contours[i]), contours_poly[i], 25, true );
+    Rect boundingR=boundingRect( Mat(contours_poly[i]) );
+    if((boundingR.area()< MAX_AREA )
+    && (boundingR.area()>MIN_AREA)
+    && (boundingR.height >boundingR.width*MIN_RATIO)
+    && (boundingR.height<boundingR.width*MAX_RATIO))
+    {
+      boundRect.push_back(boundingR );
+    }
+  }
+  //draw contours here
+  contours_poly.clear();
+  contours.clear();
+  int max=0;
+  int index=0;
+  Rect maxrec;
+  Rect rec;
+  for(int i=0; i<boundRect.size(); i++)
+  {
+    if(max<boundRect[i].area())
+    {
+      max=boundRect[i].area();
+      index=i;
+    }
+  }
+
+  rec=boundRect[index];
+  boundRect.clear();
+  char i;
+  string window="asdf";
+  if(debug)
+  {
+    rectangle(dst, rec.tl(), rec.br(), Scalar(178,183,228), 2, 8 ,0);
+    namedWindow(window, 1);
+    namedWindow("cropped",1);
+    if(dst.empty())
+    {
+      cout<<"Empty Image"<<endl;
+    }
+    else
+    {
+      imshow(window,dst);
+    }
+    cout<<"input2"<<endl;
+    cin>>i;
+  }
+  cout<<"ITS ABOUT TO DIE"<<endl;
+  if(rec.area()>0)
+  {
+    filterMat = filterMat(rec);
+    if(debug)
+    {
+      imshow("cropped",filterMat);
+      waitKey();
+    }
+    dst.release();
+
+  }
+
+  return;
+}
+
+
+bool get_OCR( const bool debug, bool & isGreen)
+{
+  Mat mat;
+  GetCameraImage(mat);
+  Mat m_green, m_red, m_blue, CroppedImage;  
+  bool isChar=false;
+    //Green
+    int lb=30;   //Low Blue
+    int lg=100;   //Low Green
+    int lr =0;   //Low Red
+    int hb=165;  //High Blue
+    int hg=155;  //High Green
+    int hr =85;  //High Red
+    inRange(mat, Scalar(lb,lg,lr), Scalar(hb,hg,hr), m_green);
+    //Red
+    lb = 0;
+    lg = 20;
+    lr = 160;
+    hb = 135;
+    hg = 125;
+    hr = 255;
+    inRange(mat, Scalar(lb,lg,lr), Scalar(hb,hg,hr), m_red);
+    //Blue
+    lb = 60;
+    lg = 80;
+    lr = 80;
+    hb = 145;
+    hg = 145;
+    hr = 155;
+    inRange(mat, Scalar(lb,lg,lr), Scalar(hb,hg,hr), m_blue);
+//    imshow("green", m_green);
+//    waitKey();
+//    imshow("blue", m_blue);
+//    waitKey();
+//    imshow("red", m_red);
+//    waitKey();
+    int nonZeroGreen = countNonZero(m_green);
+    int nonZeroRed = countNonZero(m_red);
+    int nonZeroBlue = countNonZero(m_blue);
+    string color="";
+    cout << "Checking Color" << endl;
+    if(nonZeroGreen==NULL||nonZeroRed==NULL||nonZeroBlue==NULL)
+    {
+      cout<<"IM NULL"<<endl;
+    }
+    if((nonZeroGreen>nonZeroRed)&&(nonZeroGreen>nonZeroBlue))
+    {//Green
+      //FindAndCrop(m_green);
+      color="Green";
+     cout << color << endl; 
+      isChar=false;
+      isGreen=true;
+    }
+    else if(nonZeroRed>nonZeroBlue)
+    {//Red
+      color="Red";
+      cout << color << endl;
+      FindAndCrop(m_red, debug);
+      cout<<"FIND AN CROP COMPLETE "<<endl;
+    }
+    else
+    {//Blue
+      color="Blue";
+      cout << color << endl;
+      FindAndCrop(m_blue, debug);
+      cout<<"FIND AN CROP COMPLETE "<<endl;
+    }
+
+//    imshow("asdf2", CroppedImage);
+//    waitKey();
+    if(color=="Red")
+    {
+      CroppedImage=m_red;
+    }
+    else if(color=="Blue")
+    {
+      CroppedImage=m_blue;
+    }
+    if(!(CroppedImage.empty())&&(color!="Green"))
+    { 
+      char *outText;
+
+      tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
+      // Initialize tesseract-ocr with English, without specifying tessdata path
+      if (api->Init("/usr/local/share/", "eng")) {
+          fprintf(stderr, "Could not initialize tesseract.\n");
+          exit(1);
+      }
+
+      if(color=="Red")
+        api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()");
+      else if(color=="Blue")
+        api->SetVariable("tessedit_char_whitelist", "0123456789!@#$%^&*()");
+      api->SetPageSegMode(tesseract::PSM_SINGLE_CHAR);
+      api->SetVariable("tessedit_pageseg_mode", "char");
+      api->SetImage((uchar*)CroppedImage.data, CroppedImage.size().width, 
+      CroppedImage.size().height, CroppedImage.channels(), CroppedImage.step1());
+      api->Recognize(0);
+      // Get OCR result
+      outText = api->GetUTF8Text();
+      if(outText!="")
+      {
+        cout<<"OCR output:\n"<< outText<<endl;
+        isChar=true;
+      }
+      else
+      {
+        isChar=false;
+      }
+      // Destroy used object and release memory
+      api->End();
+      delete [] outText;
+  }
+  return isChar;
+}

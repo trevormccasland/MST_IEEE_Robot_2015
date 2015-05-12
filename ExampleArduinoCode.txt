@@ -1,0 +1,183 @@
+// Test.ino
+#include <Servo.h>
+#include <Wire.h>
+#include "utility/Adafruit_PWMServoDriver.h"
+#include <Adafruit_MotorShield.h>
+ 
+ 
+const int ls = 2; //left sensor pin
+const int rs = 3; //right sensor pin
+const int osf = 4; //front offset sensor pin
+const int osr = 5; //rear offset sensor pin
+ 
+const int lt = 6; //turn left input pin
+const int rt = 7; //turn right pin
+const int gs = 8; //go straight pin
+ 
+const int lookLeft = 10; //turn camera servo left input
+const int lookRight = 11; //turn camera servo right input
+ 
+const int done = 12; //done output
+ 
+const int servoPin = 9; //servo pwm output
+ 
+Adafruit_MotorShield AFMS = Adafruit_MotorShield();
+Adafruit_DCMotor *leftMotor = AFMS.getMotor(4);
+Adafruit_DCMotor *rightMotor = AFMS.getMotor(3);
+ 
+Servo cameraServo;
+ 
+void setup() {
+  pinMode(ls, INPUT);
+  pinMode(rs, INPUT);
+  pinMode(osf, INPUT);
+  pinMode(osr, INPUT);
+  pinMode(lt, INPUT);
+  pinMode(rt, INPUT);
+  pinMode(gs, INPUT);
+ 
+ 
+  AFMS.begin();
+  leftMotor->setSpeed(60); //default speed 0-255
+  rightMotor->setSpeed (60); //default speed 0-255
+ 
+  cameraServo.attach(9);
+  cameraServo.write(90);
+ 
+  digitalWrite(done, HIGH);
+ 
+ 
+}
+void loop() {
+goforward();
+turnleft();
+goforward();
+turnleft();
+/*if (digitalRead(lt)==1) {
+  turnleft();
+}
+if (digitalRead(rt)==1) {
+  turnright();
+}
+if (digitalRead(gs)==1) {
+  goforward(); 
+}
+  if (digitalRead(lookLeft)==1) {
+    cameraServo.write(0);
+  }
+  if (digitalRead(lookRight)==1) {
+    cameraServo.write(180);
+  }
+  if (digitalRead(lookLeft)==0 && digitalRead(lookRight)==0) {
+    cameraServo.write(90);
+  }*/
+}
+ 
+void turnleft() {
+  digitalWrite (done, LOW);
+  leftMotor->run(BACKWARD);
+  rightMotor->run(FORWARD);
+  while (digitalRead(rs) == 1 || digitalRead(ls) == 1) {
+    leftMotor->run(BACKWARD);
+    rightMotor->run(FORWARD);
+  }
+  while (digitalRead(rs) == 0) {
+    leftMotor->run(BACKWARD);
+    rightMotor->run(FORWARD);
+  }
+  leftMotor->run(RELEASE);
+  rightMotor->run(RELEASE);
+  delay(500);
+  while (digitalRead(ls) == LOW) {
+    leftMotor->run(FORWARD);
+  }
+  if (digitalRead(ls) == HIGH) {
+    leftMotor->run(RELEASE);
+  }
+  while (digitalRead(rs) == LOW) {
+    rightMotor->run(FORWARD);
+  }
+  if (digitalRead(rs) == HIGH) {
+    rightMotor->run(RELEASE);
+  }
+  digitalWrite (done, HIGH);
+ 
+}
+ 
+void turnright() {
+  digitalWrite (done, LOW);
+  leftMotor->run(FORWARD);
+  rightMotor->run(BACKWARD);
+  while (digitalRead(ls) == 1 || digitalRead(rs) == 1) {
+    leftMotor->run(FORWARD);
+    rightMotor->run(BACKWARD);
+  }
+  while (digitalRead(ls) == 0) {
+    leftMotor->run(FORWARD);
+    rightMotor->run(BACKWARD);
+  }
+  leftMotor->run(RELEASE);
+  rightMotor->run(RELEASE);
+  delay(500);
+  while (digitalRead(rs) == LOW) {
+    rightMotor->run(FORWARD);
+  }
+  if (digitalRead(rs) == HIGH) {
+    rightMotor->run(RELEASE);
+  }
+  while (digitalRead(ls) == LOW) {
+    leftMotor->run(FORWARD);
+  }
+  if (digitalRead(ls) == HIGH) {
+    leftMotor->run(RELEASE);
+  }
+  digitalWrite (done, HIGH);
+}
+ 
+void goforward() {
+  digitalWrite(done, LOW);
+  while (digitalRead(osf) == 0 && digitalRead(osr) == 0) {
+    int lsRead = digitalRead(ls);
+    int rsRead = digitalRead(rs);
+    if (lsRead == 1 && rsRead == 1) {
+      leftMotor->run(FORWARD);
+      rightMotor->run(FORWARD);
+    }
+    else {
+      if (lsRead == 1 && rsRead == 0) {
+        leftMotor->run(RELEASE);
+        rightMotor->run(FORWARD);
+      }
+      else {
+        if (lsRead == 0 && rsRead == 1) {
+          leftMotor->run(FORWARD);
+          rightMotor->run(RELEASE);
+        }
+      }
+    }
+  }
+  while (digitalRead(osf) == 1 || digitalRead(osr) == 1) {
+    int lsRead = digitalRead(ls);
+    int rsRead = digitalRead(rs);
+    if (lsRead == 1 && rsRead == 1) {
+      leftMotor->run(FORWARD);
+      rightMotor->run(FORWARD);
+    }
+    else {
+      if (lsRead == 1 && rsRead == 0) {
+        leftMotor->run(RELEASE);
+        rightMotor->run(FORWARD);
+      }
+      else {
+        if (lsRead == 0 && rsRead == 1) {
+          leftMotor->run(FORWARD);
+          rightMotor->run(RELEASE);
+        }
+      }
+    }
+  }
+  leftMotor->run(RELEASE);
+  rightMotor->run(RELEASE);
+  digitalWrite(done, HIGH);
+}
+ 
